@@ -31,7 +31,7 @@ class UserQueryIntent:
             "estimate", "expected", "likely", "probably", "chance", "probability",
             "USD/PKR", "bitcoin", "gold", "stock", "currency", "exchange rate",
             "forecast", "prediction", "future", "aage", "baad", "din", "saal",
-            "mahine", "hafte", "kitna hoga", "kya hoga", "sabse zyada"
+            "mahine", "hafta", "kitna hoga", "kya hoga", "sabse zyada"
         ]
         
         self.physics_keywords = [
@@ -133,7 +133,7 @@ class UserQueryIntent:
                 "object light speed (3 lakh km/s) se travel kare, to uska time slow ho jaata hai "
                 aur wo future mein ja sakta hai. Ye Einstein ne 1905 mein bataya tha.\n\n"
                 "ChronoVault mein ye physics principles ko simulate karte hain:\n"
-                "1. Time dilation calculations: t' = t / √(1 - v²/c²)\n"
+                "1. Time dilation calculations: t' = t / square root of (1 - v^2/c^2)\n"
                 "2. Relativistic time effects for different observers\n"
                 "3. Scientific basis for long-term predictions\n\n"
                 "Ye actual time travel nahi hai - yeh physics concepts ko use karke more "
@@ -191,17 +191,17 @@ class ClarificationSystem:
             "time_travel_misconception": [
                 "Kya ako actual time travel chahiye ya statistical predictions?",
                 "Ako future ke bare mein exact certainty chahiye ya estimates?",
-                "Ako physics-based predictions chahiye ya pure historical data?"
+                "Ako physics-based predictions chahihe ya pure historical data?"
             ],
             "statistical_prediction": [
-                "Ako kitna specific answer chahiye? (range vs exact number)",
-                "Ako kitna confident hona chahiye? (high confidence vs wide range)",
+                "Ako kitna specific answer chahihe? (range vs exact number)",
+                "Ako kitna confident hona chahihe? (high confidence vs wide range)",
                 "Ako historical data kitna important hai? (recent trends vs long-term patterns)"
             ],
             "physics_concept": [
-                "Ako relativistic time effects chahiye ya pure statistical predictions?",
-                "Ako light speed effects ka model chahiye ya normal time-based forecasts?",
-                "Ako different reference frames ka consideration chahiye?"
+                "Ako relativistic time effects chahihe ya pure statistical predictions?",
+                "Ako light speed effects ka model chahihe ya normal time-based forecasts?",
+                "Ako different reference frames ka consideration chahihe?"
             ],
             "confusion_about_how_it_works": [
                 "Khaas feature mein interest hai? (AI council, data sources, confidence scoring)",

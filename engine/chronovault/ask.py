@@ -29,7 +29,7 @@ from .places import DEFAULT_CITY
 from .registry import Registry
 from .router import Intent, route
 from .text import shorten
-from .understanding import understand_user_query
+from .understanding_simple import understand_user_query
 
 # Kinds where an AI explanation/cross-check adds value. Deterministic engines
 # still own the facts; the council only explains them. Baby names stay offline
