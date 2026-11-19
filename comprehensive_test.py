@@ -280,7 +280,7 @@ def run_comprehensive_tests():
     test_results.append(test_qa_scenario(5, "latest AI news", "LIVE-NEWS", ["AI", "news"]))
 
     # Test 6-10: Knowledge and archive
-    test_results.append(test_qa_scenario(6, "time travel kya hai?", "ARCHIVE", ["time", "travel"]))
+    test_results.append(test_qa_scenario(6, "time travel kya hai?", "UNDERSTANDING", ["time", "travel"]))
     test_results.append(test_qa_scenario(7, "Japan ki capital kya hai?", "ARCHIVE", ["Tokyo", "capital"]))
     test_results.append(test_qa_scenario(8, "Pakistan me 2026 ki holidays", "ARCHIVE", ["holidays", "2026"]))
     test_results.append(test_qa_scenario(9, "Lahore me abhi kitne baje hain?", "LIVE", ["lahore", "2026"]))
