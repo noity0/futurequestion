@@ -1,6 +1,6 @@
-"""ChronoVault 2.0 — the orchestrator.
+"""ChronoVault 2.2.0 — the orchestrator.
 
-Question → route → parallel evidence → answer → optional AI synthesis →
+Question → route → parallel evidence → answer → optional AI council synthesis →
 optional Paradox Ledger prophecy + future probe.
 
 Honesty rules:
@@ -8,6 +8,9 @@ Honesty rules:
   * live data carries sources + agreement
   * forecasts carry backtest skill, an interval, and a registered probe
   * speculation is labelled SPECULATIVE and never sold as fact
+  * a council can lower confidence, never raise it above the deterministic
+    evidence it was given
+  * understanding system clarifies time travel vs statistical predictions
 """
 from __future__ import annotations
 
@@ -18,16 +21,30 @@ import time
 from dataclasses import dataclass, field
 from datetime import date, timedelta
 
-from . import formulas, net, sources
-from .forecast import forecast, to_text
+from . import babynames, formulas, net, sources, swarm
+from .forecast import MAX_HORIZON_DAYS, forecast, to_text
 from .memory import Memory
 from .oracle import Oracle
 from .places import DEFAULT_CITY
 from .registry import Registry
 from .router import Intent, route
 from .text import shorten
+from .understanding import understand_user_query
 
-AI_KINDS = {"knowledge", "forecast", "news", "country"}
+# Kinds where an AI explanation/cross-check adds value. Deterministic engines
+# still own the facts; the council only explains them. Baby names stay offline
+# by default; opt in with depth >= 15 (the shortlist itself is deterministic).
+AI_KINDS = {"knowledge", "forecast", "forecast_fx", "forecast_crypto",
+            "news", "country"}
+DEFAULT_DEPTH = 9
+
+
+def clamp_depth(value, default: int = DEFAULT_DEPTH) -> int:
+    try:
+        n = int(value)
+    except (TypeError, ValueError):
+        n = default
+    return max(5, min(50, n))
 
 
 @dataclass
@@ -48,6 +65,7 @@ class ChronoAnswer:
     ms: int = 0
     ai_used: bool = False
     notes: list = field(default_factory=list)
+    council: dict = field(default_factory=dict)
 
     def to_dict(self) -> dict:
         return {
@@ -57,7 +75,7 @@ class ChronoAnswer:
             "sources": self.sources, "intent": self.intent,
             "prophecy_id": self.prophecy_id, "probe_id": self.probe_id,
             "answer_id": self.answer_id, "ms": self.ms, "ai_used": self.ai_used,
-            "notes": self.notes,
+            "notes": self.notes, "council": self.council,
         }
 
 
@@ -71,17 +89,32 @@ def _mk(text, data=None, evidence=None, confidence=0.8, badge="LIVE",
 
 
 class Chrono:
-    def __init__(self, use_llm: bool = True):
+    def __init__(self, use_llm: bool = True, depth: int = DEFAULT_DEPTH):
         self.reg = Registry()
         self.memory = Memory()
         self.oracle = Oracle()
         self.use_llm = use_llm
+        self.depth = clamp_depth(depth)
 
     # ------------------------------------------------------------------ ask
     def ask(self, question: str, ai: bool | None = None,
-            on_stage=None) -> ChronoAnswer:
+            on_stage=None, intent: Intent | None = None,
+            record: bool = True, depth: int | None = None) -> ChronoAnswer:
         t0 = time.time()
         ai = self.use_llm if ai is None else ai
+        depth = self.depth if depth is None else clamp_depth(depth, self.depth)
+        # Check if user needs clarification about time travel vs predictions
+        understanding = understand_user_query(question)
+        if understanding["intent"]["primary_intent"] == "time_travel_misconception":
+            self._stage(on_stage, "done", {"confidence": 0.0, "ms": 0,
+                                           "badge": "NEED-CLARIFICATION"})
+            return ChronoAnswer(
+                question=question, kind="understanding",
+                answer=understanding["explanation"],
+                detail="", confidence=0.0, badge="UNDERSTANDING",
+                intent={"kind": "understanding", "reason": "time_travel_misconception"},
+                data={"understanding": understanding})
+        
         if not (question or "").strip():
             self._stage(on_stage, "done", {"confidence": 0.0, "ms": 0,
                                            "badge": "NEED-INPUT"})
@@ -91,7 +124,7 @@ class Chrono:
                         "\"Lahore ka mausam\" ya \"1 Jan 2050 konsa din?\"."),
                 detail="", confidence=0.0, badge="NEED-INPUT",
                 intent={"kind": "empty", "reason": "blank question"})
-        intent = route(question)
+        intent = intent or route(question)
         self._stage(on_stage, "plan", intent.to_dict())
         try:
             res = self._dispatch(question, intent, on_stage)
@@ -118,29 +151,108 @@ class Chrono:
         if stale and len(stale) == len(evidence) and evidence:
             notes.append("Sab sources cache se aaye (offline-first).")
 
-        # ---------------------------------------------------------- AI layer
-        want_ai = ai and (intent.kind in AI_KINDS or res.get("force_llm"))
+        # ------------------------------------------------------ AI council
+        council: dict = {}
+        want_ai = ai and (intent.kind in AI_KINDS or res.get("force_llm") or
+                          (intent.kind == "baby_name" and depth >= 15))
         if want_ai and (res.get("ok") or res.get("force_llm")):
-            self._stage(on_stage, "synthesize", {"engine": "llm"})
-            prompt = self._build_prompt(question, intent, res, evidence)
-            llm = sources.llm(prompt, timeout=26)
-            if llm.get("ok"):
-                res["detail"] = res.get("text", "")
-                res["text"] = llm["text"]
-                res["badge"] = (res.get("badge") or "") + " + AI-SYNTHESIS"
-                res["ai_used"] = True
-                if not sources_list:
-                    sources_list = ["Pollinations (keyless LLM, unverified)"]
-                    notes.append("AI ne general knowledge se jawab diya — koi live source verify nahi hua.")
+            self._stage(on_stage, "council",
+                        {"agents": depth, "engine": "swarm",
+                         "kind": intent.kind})
+            constraint = ""
+            fc = (res.get("data") or {}).get("forecast") or {}
+            if fc:
+                if fc.get("horizon_capped"):
+                    constraint = (
+                        f"HORIZON CAP: the user asked for "
+                        f"{int(fc.get('requested_horizon_days') or 0):,} days, but "
+                        f"the statistical model is only valid for "
+                        f"{int(fc.get('horizon_days') or 0):,} days. The forecast "
+                        f"range applies to {int(fc.get('horizon_days') or 0):,} "
+                        f"days, NOT to the requested horizon. State this cap "
+                        f"clearly and never present the capped range as the "
+                        f"answer for the requested horizon.")
                 else:
-                    notes.append("AI synthesis: verified evidence ko Roman Urdu me summarize kiya.")
+                    constraint = (
+                        f"STATISTICAL HORIZON: {int(fc.get('horizon_days') or 0):,} "
+                        f"days, target {fc.get('target_date')}. Do not describe "
+                        f"the forecast as covering a different horizon.")
+            elif intent.kind == "forecast":
+                data = res.get("data") or {}
+                hd = int(data.get("horizon_days") or 0)
+                req = int(data.get("requested_horizon_days") or hd)
+                if hd:
+                    if data.get("horizon_capped") or req > hd:
+                        constraint = (
+                            f"HORIZON CAP: the user asked for {req:,} days, but "
+                            f"this analysis is only honest up to {hd:,} days. The "
+                            f"outlook applies to {hd:,} days, NOT to {req:,} days. "
+                            f"State this cap clearly.")
+                    else:
+                        constraint = (
+                            f"ANALYSIS HORIZON: {hd:,} days. Do not describe the "
+                            f"outlook as covering a different horizon.")
+            synth = swarm.synthesize(
+                question, intent.kind, res.get("text", ""), evidence,
+                depth=depth,
+                base_confidence=float(res.get("confidence", 0.5)),
+                on_stage=on_stage, constraint=constraint)
+            council = synth.get("summary") or {}
+            if synth.get("ok"):
+                replied = int(council.get("agents_replied") or 0)
+                models = len(council.get("models_replied") or [])
+                det_conf = float(res.get("confidence", 0.3))
+                council_conf = float(synth.get("confidence") or 0.0)
+                if intent.kind == "baby_name":
+                    # The shortlist itself is the deliverable. Keep it intact
+                    # and append the council's cross-check instead of replacing.
+                    res["detail"] = res.get("text", "")
+                    res["text"] = (res.get("text", "").rstrip() +
+                                   "\n\nCouncil cross-check: " + synth["text"])
+                elif intent.kind.startswith("forecast"):
+                    # Numbers, ranges, horizons and backtests are the verified
+                    # deliverable. The council may add a cross-check, but it
+                    # must never paraphrase or replace the deterministic values.
+                    res["detail"] = res.get("text", "")
+                    res["text"] = (res.get("text", "").rstrip() +
+                                   "\n\nCouncil cross-check: " + synth["text"])
+                else:
+                    res["detail"] = res.get("text", "")
+                    res["text"] = synth["text"]
+                res["badge"] = (res.get("badge") or "") + \
+                    f" + COUNCIL CHECK {replied}/{depth}"
+                res["ai_used"] = True
+                if res.get("ok"):
+                    # The council may reduce confidence, never raise it above
+                    # the deterministic evidence layer.
+                    res["confidence"] = round(min(det_conf, council_conf), 3)
+                else:
+                    # A council answer without verified evidence is still
+                    # speculation. Keep its confidence clearly below a
+                    # sourced answer; generic forecasts are the strictest.
+                    cap = 0.35 if intent.kind == "forecast" else 0.45
+                    res["confidence"] = round(
+                        min(max(det_conf, council_conf), cap), 3)
+                notes.append(
+                    f"AI council: {replied}/{depth} specialist agents, "
+                    f"{models} model route(s), agreement "
+                    f"{float(council.get('agreement') or 0):.2f}.")
+                if not sources_list:
+                    sources_list = ["Keyless AI council (unverified synthesis)"]
+                    notes.append("AI ne general knowledge se jawab diya — koi "
+                                 "live source verify nahi hua.")
+                for n in (synth.get("notes") or [])[:4]:
+                    if n and n not in notes:
+                        notes.append(n)
             else:
-                notes.append("AI synthesis unavailable — verified/deterministic answer shown.")
-                if not res.get("ok"):
+                notes.extend((synth.get("notes") or [])[:3])
+                notes.append("AI council unavailable — verified/deterministic "
+                             "answer shown.")
+                if not res.get("ok") and not res.get("text"):
                     res["text"] = (
-                        "Mujhe is sawal ka verified jawab nahi mila, aur AI layer bhi "
-                        "abhi offline hai. Facts invent nahi karunga. Dobara try karein "
-                        "ya zyada specific sawal poochein.")
+                        "Mujhe is sawal ka verified jawab nahi mila, aur AI "
+                        "council bhi abhi offline hai. Facts invent nahi karunga. "
+                        "Dobara try karein ya zyada specific sawal poochein.")
                     res["badge"] = "NO-DATA"
                     res["confidence"] = min(res.get("confidence", 0.2), 0.2)
         elif not res.get("ok") and not res.get("text"):
@@ -177,15 +289,24 @@ class Chrono:
             badge=res.get("badge", ""), evidence=evidence,
             data=res.get("data") or {}, sources=sources_list,
             intent=intent.to_dict(), prophecy_id=pid, probe_id=probe_id,
-            ms=0, ai_used=bool(res.get("ai_used")), notes=notes)
+            ms=0, ai_used=bool(res.get("ai_used")), notes=notes,
+            council=council)
         ans.ms = int((time.time() - t0) * 1000)
-        try:
-            ans.answer_id = self.memory.record(question, ans.to_dict(), ans.ms)
-        except Exception as e:
-            ans.notes.append(f"Memory write failed: {e}")
+        if record:
+            try:
+                ans.answer_id = self.memory.record(question, ans.to_dict(), ans.ms)
+            except Exception as e:
+                ans.notes.append(f"Memory write failed: {e}")
         self._stage(on_stage, "done", {"confidence": ans.confidence,
                                        "ms": ans.ms, "badge": ans.badge})
         return ans
+
+    def ask_with_intent(self, question: str, intent: Intent,
+                        ai: bool | None = None, on_stage=None,
+                        depth: int | None = None) -> ChronoAnswer:
+        """Agent/chat entry point: skip routing, dispatch known slots."""
+        return self.ask(question, ai=ai, on_stage=on_stage, intent=intent,
+                        depth=depth)
 
     @staticmethod
     def _stage(cb, name: str, payload: dict):
@@ -241,7 +362,7 @@ class Chrono:
 
         if k == "help":
             txt = (
-                "Main ChronoVault 2.0 hoon — ek keyless, local time machine jo "
+                "Main ChronoVault 2.2 hoon — ek keyless, local time machine jo "
                 "past (Vault), present (live sources) aur future (forecast + probe) "
                 "teenon se kaam karti hai. Kya kar sakta hoon:\n"
                 "• Exact: \"1 Jan 2050 konsa din?\", \"2050 tak kitne din?\", "
@@ -255,6 +376,8 @@ class Chrono:
                 "earthquakes\"\n"
                 "• Time capsule: \"time capsule banao: future ke liye message, "
                 "1 saal baad kholna\"\n"
+                "• Council: har AI jawab keyless specialist agents ki council se "
+                "cross-check hota hai (default 9, full 50: \"/deep <sawal>\").\n"
                 "Har future prediction Paradox Ledger me register hoti hai aur "
                 "due date par probe asli truth se compare karta hai.")
             return _mk(txt, {"examples": [
@@ -263,19 +386,22 @@ class Chrono:
             ]}, confidence=1.0, badge="INFO")
         if k == "identity":
             return _mk(
-                "Main ChronoVault 2.0 hoon — aapke PC par chalne wali keyless "
-                "time machine. Main 3,900+ public endpoints se present/future "
-                "data leta hoon, exact math karta hoon, aur future predictions ko "
-                "Paradox Ledger me register karke baad me verify karta hoon. "
-                "Asli time travel possible nahi hai — jo main karta hoon woh "
-                "verified retrieval + statistical forecasting hai, aur main isay "
-                "saaf label karta hoon.",
-                {"version": "2.0", "endpoints": self.reg.total},
+                f"Main ChronoVault 2.2 hoon — aapke PC par chalne wali keyless "
+                f"time machine. Main {self.reg.total:,} public endpoints se "
+                f"present data leta hoon, exact math karta hoon, 70 specialist "
+                f"AI roles ki council se jawab cross-check karta hoon, aur future "
+                f"predictions ko Paradox Ledger me register karke baad me verify "
+                f"karta hoon. Asli time travel possible nahi hai — jo main karta "
+                f"hoon woh verified retrieval + statistical forecasting hai, aur "
+                f"main isay saaf label karta hoon.",
+                {"version": "2.2", "endpoints": self.reg.total,
+                 "council_roles": len(swarm.ROLES)},
                 confidence=1.0, badge="INFO")
         if k == "smalltalk":
-            return _mk("Salam! Main ChronoVault 2.0 hoon. Kisi bhi waqt, file, "
+            return _mk("Salam! Main ChronoVault 2.2 hoon. Kisi bhi waqt, file, "
                        "rate, mausam, knowledge ya future prediction ke bare me "
-                       "poochein — main sources ke saath jawab dunga.",
+                       "poochein — deterministic facts aur AI council ke saath "
+                       "jawab dunga.",
                        confidence=1.0, badge="INFO")
         if k == "system":
             h = net.health_summary()
@@ -283,9 +409,11 @@ class Chrono:
             m = self.memory.stats()
             by_cat = self.reg.stats()["categories"]
             txt = (
-                f"ChronoVault 2.0 system report:\n"
+                f"ChronoVault 2.2 system report:\n"
                 f"• Registry: {self.reg.total:,} keyless endpoints "
                 f"({len(by_cat)} categories)\n"
+                f"• AI council: {len(swarm.ROLES)} specialist roles, "
+                f"{len(swarm.STATIC_ROUTES)} known model routes\n"
                 f"• Provider health: {h['alive']} endpoints ne successfully jawab diya; "
                 f"{h['requests_ok']} OK / {h['requests_fail']} fail\n"
                 f"• Oracle: {o.get('prophecies', 0)} prophecies, "
@@ -321,6 +449,37 @@ class Chrono:
                 "result": s.get("result"),
                 "text": s.get("text")
             }, confidence=0.999, badge="EXACT-MATH")
+
+        if k == "baby_name":
+            slots = {
+                "gender": (s.get("gender") or "").strip().lower(),
+                "surname": (s.get("surname") or "").strip(),
+                "culture": (s.get("culture") or "").strip().lower(),
+                "style": (s.get("style") or "").strip().lower(),
+            }
+            missing = []
+            if not slots["gender"]:
+                missing.append("gender")
+            if not slots["surname"]:
+                missing.append("surname")
+            if not slots["culture"]:
+                missing.append("culture")
+            if missing:
+                return _mk(
+                    "Naam shortlist banane ke liye 3 details chahiye: "
+                    + ", ".join(missing) + ". Chat me \"mere bache ka naam "
+                    "kya hoga?\" poochein — main step by step poochh lunga.",
+                    {"missing": missing, "slots": slots},
+                    confidence=1.0, badge="NEED-INPUT")
+            result = babynames.suggest(
+                gender=slots["gender"], surname=slots["surname"],
+                culture=slots["culture"] or "urdu",
+                style=slots["style"] or "any")
+            return _mk(
+                babynames.to_text(result), result, confidence=0.62,
+                badge="SPECULATIVE",
+                notes=["Yeh cultural/phonetic shortlist hai, guaranteed future "
+                       "prediction nahi. Asli naam aap decide karenge."])
 
         if k == "date":
             if not s.get("date"):
@@ -368,18 +527,20 @@ class Chrono:
             cur = sources.fx_rate(base, quote, amount, self.reg)
             if k == "fx" or not cur.get("ok"):
                 return cur
-            horizon = int(s.get("horizon_days") or 30)
+            requested = max(1, int(s.get("horizon_days") or 30))
             self._stage(on_stage, "source", {"name": f"{base}/{quote} history"})
-            series = sources.fx_series(base, quote, max(120, min(365, horizon * 3)),
+            series = sources.fx_series(base, quote, max(120, min(365, requested * 3)),
                                        self.reg)
-            f = forecast(series, horizon)
+            f = forecast(series, requested)
             if not f:
                 txt = cur["text"] + ("\n\nIs pair ki history nahi mili, is liye "
                                      "forecast nahi de sakta — sirf aaj ka rate "
                                      "verified hai.")
                 return _mk(txt, cur["data"], cur["evidence"],
                            confidence=cur["confidence"], badge="LIVE")
-            target = s.get("target") or (formulas.today() + timedelta(days=horizon)).isoformat()
+            horizon = int(f["horizon_days"])
+            target = None if f.get("horizon_capped") else s.get("target")
+            target = target or (formulas.today() + timedelta(days=horizon)).isoformat()
             unit = quote
             ftxt = to_text(f"{base}/{quote}", f, unit)
             txt = cur["text"] + "\n\n" + ftxt
@@ -405,18 +566,20 @@ class Chrono:
             cur = sources.crypto_price(coin, sym, amount, self.reg)
             if k == "crypto" or not cur.get("ok"):
                 return cur
-            horizon = int(s.get("horizon_days") or 90)
+            requested = max(1, int(s.get("horizon_days") or 90))
             self._stage(on_stage, "source", {"name": f"{sym} history"})
-            series = sources.crypto_series(coin, max(90, min(365, horizon * 3)),
+            series = sources.crypto_series(coin, max(90, min(365, requested * 3)),
                                            self.reg)
-            f = forecast(series, horizon)
+            f = forecast(series, requested)
             if not f:
                 txt = cur["text"] + ("\n\nIs coin ki history nahi mili, is liye "
                                      "forecast nahi de sakta — sirf aaj ka price "
                                      "verified hai.")
                 return _mk(txt, cur["data"], cur["evidence"],
                            confidence=cur["confidence"], badge="LIVE")
-            target = s.get("target") or (formulas.today() + timedelta(days=horizon)).isoformat()
+            horizon = int(f["horizon_days"])
+            target = None if f.get("horizon_capped") else s.get("target")
+            target = target or (formulas.today() + timedelta(days=horizon)).isoformat()
             ftxt = to_text(f"{sym}/USD", f, "USD")
             txt = cur["text"] + "\n\n" + ftxt
             conf = round(cur["confidence"] * 0.4 + f["confidence"] * 0.6, 3)
@@ -474,17 +637,35 @@ class Chrono:
                 fn = ex.submit(sources.news, query, self.reg)
                 kb = fk.result()
                 nb = fn.result()
-            ev = (kb.get("evidence") or []) + (nb.get("evidence") or [])
-            facts = kb.get("text") or ""
-            heads = nb.get("text") or ""
-            horizon = int(s.get("horizon_days") or 30)
+            ev = []
+            facts = ""
+            if kb.get("ok"):
+                ev.extend(kb.get("evidence") or [])
+                facts = kb.get("text") or ""
+            heads = ""
+            if nb.get("ok"):
+                ev.extend(nb.get("evidence") or [])
+                heads = nb.get("text") or ""
+            requested = max(1, int(s.get("horizon_days") or 30))
+            horizon = min(MAX_HORIZON_DAYS, requested)
+            capped = requested > horizon
             txt = (f"Yeh ek speculative future sawal hai — iska koi deterministic "
-                   f"jawab nahi. Main {horizon} din ke horizon ke liye verified "
-                   f"facts + current signals de raha hoon, prediction guarantee nahi.\n\n")
+                   f"jawab nahi aur koi guaranteed number/ranking nahi. Main "
+                   f"{horizon:,} din ke horizon ke liye verified facts + current "
+                   f"signals de raha hoon.\n\n")
+            if capped:
+                txt += (f"Aap ne {requested:,} din maange the; is analysis ka "
+                        f"honest horizon {horizon:,} din (~10 saal) hai. "
+                        f"Neeche diya gaya outlook {horizon:,} din ka hai, "
+                        f"{requested:,} din ka nahi.\n\n")
             if facts:
                 txt += "Verified background:\n" + shorten(facts, 900) + "\n\n"
             if heads:
                 txt += "Current signals:\n" + shorten(heads, 700) + "\n\n"
+            if not heads and (nb.get("data") or {}).get("checked"):
+                txt += ("News check: is topic se match karti koi recent headline "
+                        "nahi mili, is liye unrelated news ko signal nahi banaya "
+                        "gaya.\n\n")
             if not facts and not heads:
                 txt += ("Mujhe is topic par abhi koi verified source nahi mila, "
                         "is liye main sirf guess nahi karunga. Numeric cheezon "
@@ -493,6 +674,8 @@ class Chrono:
             txt += "Yeh speculative analysis hai."
             conf = 0.38 if (facts or heads) else 0.18
             return _mk(txt, {"query": query, "horizon_days": horizon,
+                             "requested_horizon_days": requested,
+                             "horizon_capped": capped,
                              "background": kb.get("data"), "news": nb.get("data")},
                        ev, confidence=conf, badge="SPECULATIVE",
                        ok=bool(facts or heads), force_llm=True)

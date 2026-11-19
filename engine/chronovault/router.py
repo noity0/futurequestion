@@ -148,6 +148,35 @@ def _clean_query(q: str, extra: list[str] | None = None) -> str:
     return " ".join(kept).strip() or q.strip()
 
 
+def forecast_query(text: str) -> str:
+    """Extract the topic from a speculative future question.
+
+    The forecast engine needs a clean subject; horizon words belong in slots,
+    not in a Wikipedia/news search:
+
+        "20 saal baad pakistan military power kya hoga?"
+            -> "pakistan military power"
+    """
+    s = text.strip()
+    # "20 saal baad", "10 years later", "3 mahine mein"
+    s = re.sub(r"(?i)\b\d+(?:[.,]\d+)?\s*"
+               r"(?:saal|sal|years?|din|days?|mahine|months?|hafte|weeks?)\s*"
+               r"(?:baad|later|from\s+now|me|mein)?\b", " ", s)
+    # relative future markers
+    s = re.sub(r"(?i)\b(?:agle|agli|aglay|next|aane\s+wale|aane\s+wala|"
+               r"future|baad|later)\b", " ", s)
+    # a year used as the horizon ("2046 me", "in 2046 tak")
+    s = re.sub(r"(?i)\b(?:in\s+)?20\d{2}\s*(?:me|mein|tak)\b", " ", s)
+    # future/question verbs
+    s = re.sub(r"(?i)\b(?:kya|kia|hoga|hogi|honge|hone|rahega|rahegi|"
+               r"rahenge|kitna|kitne|kaisa|kaisi|kaisay|expected|predict|"
+               r"prediction|forecast)\b", " ", s)
+    out = _clean_query(s, ["saal", "sal", "din", "days", "year", "years",
+                           "baad", "later", "future", "agle", "agli", "aglay",
+                           "next", "hoga", "hogi", "honge"])
+    return out or _clean_query(text) or text.strip()
+
+
 def _principal(text: str) -> float:
     """Find the principal amount: a number that is not a % rate or a duration."""
     t = text.replace(",", "")
@@ -379,6 +408,20 @@ def route(question: str) -> Intent:
             kind = "solar"
         return Intent("space", 0.88, {"space": kind}, "space keywords")
 
+    # ----------------------------------------------------------- baby name
+    baby_words = ("bacha", "bachay", "bacche", "bache", "bachcha", "bachon",
+                  "bachpan", "baby", "beti", "beta", "child", "newborn",
+                  "hone wala", "hone wali")
+    name_words = ("naam", "name", "kya hoga", "kya hogi", "rakhna", "rakhein")
+    if _has(q, *baby_words) and _has(q, *name_words):
+        gender = ""
+        if re.search(r"\b(boy|ladka|beta|male|mard)\b", q):
+            gender = "boy"
+        elif re.search(r"\b(girl|ladki|beti|female|aurat)\b", q):
+            gender = "girl"
+        return Intent("baby_name", 0.93, {"gender": gender},
+                      "baby name question")
+
     # --------------------------------------------------------- exact math
     math = _pure_math(raw)
     if math:
@@ -393,7 +436,7 @@ def route(question: str) -> Intent:
         horizon, target = _horizon(raw)
         return Intent("forecast", 0.72, {
             "horizon_days": horizon, "target": target,
-            "query": _clean_query(raw),
+            "query": forecast_query(raw),
         }, "future words without concrete domain")
 
     # -------------------------------------------------------------- knowledge

@@ -60,17 +60,51 @@ def parse_duration_days(text: str) -> int | None:
     t = text.lower()
     m = re.search(r"(\d+(?:\.\d+)?)\s*(din|days?|roz|saal|year|years?|sal|"
                   r"mahine|mahina|months?|month|hafta|hafte|weeks?|week)", t)
-    if not m:
-        return None
-    n = float(m.group(1))
-    unit = m.group(2)
-    if unit.startswith(("saal", "sal", "year")):
-        return int(round(n * 365))
-    if unit.startswith(("mahin", "month")):
-        return int(round(n * 30))
-    if unit.startswith(("hafta", "hafte", "week")):
-        return int(round(n * 7))
-    return int(n)
+    if m:
+        n = float(m.group(1))
+        unit = m.group(2)
+        if unit.startswith(("saal", "sal", "year")):
+            return int(round(n * 365))
+        if unit.startswith(("mahin", "month")):
+            return int(round(n * 30))
+        if unit.startswith(("hafta", "hafte", "week")):
+            return int(round(n * 7))
+        return int(n)
+
+    # Relative phrases without digits: "agle saal", "next month", etc. Without
+    # this, a one-year question silently fell back to the 30-day default.
+    if re.search(r"\b(?:agle|agli|agla|next)\s+(?:saal|sal|year)\b", t) or \
+            re.search(r"\b(?:ek|one|1)\s+(?:saal|sal|year)\b", t) or \
+            re.search(r"\b(?:saal|sal|year)\s+(?:baad|later)\b", t):
+        return 365
+    if re.search(r"\b(?:agle|agli|agla|next)\s+(?:mahine|mahina|month)\b", t) or \
+            re.search(r"\b(?:ek|one|1)\s+(?:mahina|mahine|month)\b", t):
+        return 30
+    if re.search(r"\b(?:agle|agli|agla|next)\s+(?:hafta|hafte|week)\b", t) or \
+            re.search(r"\b(?:ek|one|1)\s+(?:hafta|hafte|week)\b", t):
+        return 7
+
+    # "do saal", "paanch din", "three months" ...
+    words = {
+        "ek": 1, "ik": 1, "one": 1, "do": 2, "two": 2, "teen": 3, "three": 3,
+        "char": 4, "chaar": 4, "four": 4, "panch": 5, "paanch": 5, "five": 5,
+        "chhe": 6, "che": 6, "six": 6, "saat": 7, "seven": 7, "aath": 8,
+        "eight": 8, "nau": 9, "nine": 9, "das": 10, "ten": 10,
+    }
+    m = re.search(r"\b(" + "|".join(words) + r")\s+(din|days?|roz|saal|sal|"
+                  r"years?|year|mahine|mahina|months?|month|hafte|hafta|"
+                  r"weeks?|week)\b", t)
+    if m:
+        n = float(words[m.group(1)])
+        unit = m.group(2)
+        if unit.startswith(("saal", "sal", "year")):
+            return int(round(n * 365))
+        if unit.startswith(("mahin", "month")):
+            return int(round(n * 30))
+        if unit.startswith(("haft", "week")):
+            return int(round(n * 7))
+        return int(n)
+    return None
 
 
 def parse_date(text: str) -> date | None:

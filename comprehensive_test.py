@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Comprehensive QA Test Suite for ChronoVault 2.0
+Comprehensive QA Test Suite for ChronoVault 2.2.0
 Tests 20 different scenarios to identify and fix issues
 """
 
@@ -10,9 +10,29 @@ sys.path.insert(0, 'engine')
 
 from chronovault import Chrono, ChronoAnswer, Memory, Oracle
 from chronovault.probes import harvest_due, schedule_daily, run_cli, task_status
-from chronovault.forecast import forecast
+from chronovault.forecast import forecast, time_dilation_factor, relativistic_time_effects
 from chronovault.registry import Registry
 import json
+
+def test_relativistic_time_calculations():
+    """Test relativistic time calculations"""
+    print("\n--- Test Relativistic Time Calculations ---")
+    
+    # Test time dilation at different speeds
+    test_cases = [
+        (0, 10),      # At rest
+        (10, 10),     # 10% light speed
+        (50, 10),     # 50% light speed
+        (90, 10),     # 90% light speed
+        (99, 10),     # 99% light speed
+    ]
+    
+    for velocity_percent, years in test_cases:
+        result = relativistic_time_effects(years, velocity_percent)
+        print(f"At {velocity_percent}% light speed: {years} Earth years = {result['traveler_years']:.1f} traveler years (factor: {result['dilation_factor']:.2f})")
+    
+    return True
+
 
 def test_qa_scenario(scenario_num, question, expected_badge=None, expected_keywords=None):
     """Test a single QA scenario"""
@@ -244,8 +264,11 @@ def test_edge_cases():
 
 def run_comprehensive_tests():
     """Run all comprehensive tests"""
-    print("🔍 COMPREHENSIVE QA TEST SUITE - ChronoVault 2.0")
+    print("🔍 COMPREHENSIVE QA TEST SUITE - ChronoVault 2.2.0")
     print("=" * 60)
+
+    # Test relativistic time calculations
+    test_relativistic_time_calculations()
 
     test_results = []
 

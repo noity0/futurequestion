@@ -607,50 +607,81 @@ def news(query: str = "", reg=None, limit: int = 7) -> dict:
         jobs.append({"id": "rss_aljazeera_all", "kind": "xml"})
     jobs.append({"id": "rss_bbc_world", "kind": "xml"})
     results = net.get_many(jobs, timeout=10, registry=reg)
-    ev = []
+    feeds: list[tuple[object, list[dict]]] = []
     items = []
     seen = set()
     for r in results:
         if not r.ok or not isinstance(r.data, str):
             continue
         parsed = parse_rss(r.data, limit=10)
-        if parsed:
-            ev.append(_ev(r, "RSS", f"{len(parsed)} items from {r.url[:80]}", 0.82))
+        if not parsed:
+            continue
+        feeds.append((r, parsed))
         for it in parsed:
             key = re.sub(r"\W+", "", it["title"].lower())[:60]
             if key in seen:
                 continue
             seen.add(key)
+            it["_key"] = key
             it["_ts"] = _parse_date(it.get("date", ""))
             items.append(it)
     if not items:
         return box("Abhi koi news feed nahi mila (network off ya feeds block).",
-                   evidence=ev, confidence=0.3, badge="NO-DATA", ok=False)
+                   evidence=[], confidence=0.3, badge="NO-DATA", ok=False)
+    checked = len(items)
+    matched = False
     if q:
         toks = [t for t in re.findall(r"[a-z0-9]+", q.lower()) if len(t) > 1]
-        def relevant(it):
+        need = 1 if len(toks) <= 1 else max(2, (len(toks) + 1) // 2)
+        def hits(it):
             text = (it.get("title", "") + " " +
                     (it.get("summary") or "")).lower()
+            n = 0
             for tok in toks:
                 if len(tok) <= 3:
                     if re.search(r"(?<!\w)" + re.escape(tok) + r"(?!\w)", text):
-                        return True
+                        n += 1
                 elif tok in text:
-                    return True
-            return False
-        filtered = [it for it in items if relevant(it)]
-        if len(filtered) >= 2:
+                    n += 1
+            return n
+        filtered = [it for it in items if hits(it) >= need]
+        if filtered:
             items = filtered
+            matched = True
+        else:
+            # Do not label unrelated headlines as if they answered the query.
+            # Showing a random BBC headline under a user's topic would be a
+            # provenance lie, even if the feed itself is healthy.
+            return box(
+                f"Is sawal ({q}) se match karti koi recent news nahi mili. "
+                f"{checked} headlines check kiye gaye, lekin koi relevant "
+                f"match nahi tha — is liye unhein jawab ke tor par pesh nahi "
+                f"kiya ja raha.",
+                {"query": q, "matched": False, "checked": checked,
+                 "items": []},
+                evidence=[], confidence=0.2, badge="NO-DATA", ok=False)
     items.sort(key=lambda x: x["_ts"].timestamp() if x.get("_ts") else 0, reverse=True)
     items = items[:limit]
+    matched_keys = {it.get("_key") for it in items}
+    ev = []
+    for r, parsed in feeds:
+        n = sum(1 for it in parsed if it.get("_key") in matched_keys) if q \
+            else len(parsed)
+        if n:
+            ev.append(_ev(r, "RSS", f"{n} matching items from {r.url[:80]}",
+                          0.82))
     lines = []
     for it in items:
         d = it["_ts"].strftime("%d %b %H:%M") if it.get("_ts") else ""
         src = f" — {it['source']}" if it.get("source") else ""
         lines.append(f"• {it['title']}{src}" + (f" ({d})" if d else ""))
-    head = f"Latest {('about ' + q) if q else 'headlines'} ({len(items)} stories):"
+    if q:
+        head = f'News matching "{q}" ({len(items)} stories):'
+    else:
+        head = f"Latest headlines ({len(items)} stories):"
     return box(head + "\n" + "\n".join(lines), {
-        "query": q, "items": [{
+        "query": q, "matched": matched, "checked": checked,
+        "items": [{
             "title": it["title"], "link": it["link"],
             "date": it["_ts"].isoformat() if it.get("_ts") else it.get("date", ""),
             "source": it.get("source", ""), "summary": it.get("summary", ""),
@@ -1052,14 +1083,45 @@ def llm(prompt: str, system: str = "", timeout: float = 24.0) -> dict:
         "Never invent numbers, dates, or sources. End with a short parenthetical "
         "source note when sources are given."
     )
+    messages = [
+        {"role": "system", "content": sys_msg},
+        {"role": "user", "content": prompt[:3000]},
+    ]
+    r = llm_chat(messages, model="openai-fast", temperature=0.35,
+                 timeout=timeout)
+    if r.get("ok"):
+        return r
+    # GET fallback (shorter prompt)
+    short = prompt[:1400]
+    r2 = net.fetch("https://text.pollinations.ai/" + urllib.parse.quote(short),
+                   ttl=21600, kind="text", timeout=timeout,
+                   endpoint_id="ai_pollinations_text")
+    text = ""
+    if r2.ok and r2.text:
+        text = r2.text
+    text = clean(text).strip().strip('"').strip()
+    text = re.sub(r"\s*[\u2010-\u2015]\s*", " - ", text)
+    text = re.sub(r"\s+", " ", text).strip()
+    if len(text) < 12 or text.lower().startswith(("error", "{\"error")):
+        return {"ok": False, "text": "", "source": "", "error": "LLM unavailable"}
+    return {"ok": True, "text": text,
+            "source": "Pollinations (keyless LLM)", "model": "openai-fast"}
+
+
+def llm_chat(messages: list[dict], model: str = "openai-fast",
+             temperature: float = 0.4, timeout: float = 30.0,
+             max_tokens: int = 700) -> dict:
+    """OpenAI-compatible keyless chat call (Pollinations anonymous tier).
+
+    `messages` is a standard role/content list. Returns {ok,text,source,model}.
+    Never retries in a tight loop; callers decide how to degrade.
+    """
     body = {
-        "model": "openai",
-        "messages": [
-            {"role": "system", "content": sys_msg},
-            {"role": "user", "content": prompt[:3000]},
-        ],
-        "temperature": 0.35,
+        "model": model or "openai-fast",
+        "messages": messages,
+        "temperature": max(0.0, min(1.2, float(temperature))),
         "private": True,
+        "max_tokens": max(32, int(max_tokens)),
     }
     r = net.fetch("https://text.pollinations.ai/openai", method="POST",
                   json_body=body, ttl=21600, timeout=timeout,
@@ -1072,17 +1134,11 @@ def llm(prompt: str, system: str = "", timeout: float = 24.0) -> dict:
             text = r.data.get("text") or r.data.get("response") or ""
     if not text and r.ok and isinstance(r.data, str):
         text = r.data
-    if not text:
-        # GET fallback (shorter prompt)
-        short = prompt[:1400]
-        r2 = net.fetch("https://text.pollinations.ai/" + urllib.parse.quote(short),
-                       ttl=21600, kind="text", timeout=timeout,
-                       endpoint_id="ai_pollinations_text")
-        if r2.ok and r2.text:
-            text = r2.text
     text = clean(text).strip().strip('"').strip()
     text = re.sub(r"\s*[\u2010-\u2015]\s*", " - ", text)
     text = re.sub(r"\s+", " ", text).strip()
-    if len(text) < 12 or text.lower().startswith(("error", "{\"error")):
-        return {"ok": False, "text": "", "source": "", "error": "LLM unavailable"}
-    return {"ok": True, "text": text, "source": "Pollinations (keyless LLM)"}
+    if len(text) < 8 or text.lower().startswith(("error", "{\"error")):
+        return {"ok": False, "text": "", "source": "Pollinations",
+                "model": body["model"], "error": "LLM unavailable"}
+    return {"ok": True, "text": text, "source": "Pollinations (keyless LLM)",
+            "model": body["model"]}

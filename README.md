@@ -1,4 +1,4 @@
-# ⏳ ChronoVault 2.0 — The Keyless Time Machine
+# ⏳ ChronoVault 2.2.0 — The Keyless Time Machine
 
 > **TL;DR:** A working "time machine" in Python — past archives + live present data + statistical future forecasts, with honest confidence badges. No API keys. No telemetry. Local-first.
 
@@ -15,9 +15,9 @@ Real time travel is not possible. ChronoVault does the honest version: it **fold
 - **Paradox Ledger** — every forecast is registered with a machine-checkable probe. When the due date arrives, the real value is harvested and the prediction is scored (Brier / hit-rate).
 - **Time capsules** — seal a message for your future self.
 - **Time Cockpit web UI** — streaming stages, badge, confidence bar, evidence fold, source chips, timeline, multiverse bands, oracle, network health, capsules, registry search.
-- **3,909-endpoint keyless registry** across 13 categories.
+- **12,380-endpoint keyless registry** across 13 categories.
 - **Stdlib only** — no `pip install`, no build step, no JavaScript framework.
-- **Optional local AI** — works with a keyless Pollinations endpoint by default; Ollama can be used if installed (not required).
+- **70-role specialist AI council** — 50+ agent cross-checks with honest confidence scoring; no API keys by default (OVHcloud anonymous tier + Pollinations).
 
 ---
 
@@ -100,7 +100,7 @@ Run `python chrono.py cockpit` and open http://127.0.0.1:8765.
 | **Oracle** | Prophecies, probes, scheduler, Brier calibration |
 | **Network** | Provider health and HTTP cache |
 | **Capsules** | Seal messages for your future self |
-| **Registry** | Search 3,909 keyless endpoints |
+| **Registry** | Search 12,380 keyless endpoints |
 
 The server binds to `127.0.0.1` only. There is no auth because it is a personal local tool — do not expose it to the internet.
 
@@ -133,9 +133,9 @@ The server binds to `127.0.0.1` only. There is no auth because it is a personal 
 
 ## 📚 Endpoint Registry
 
-`registry_v2.json` contains **3,909 keyless endpoints** in 13 categories:
+`registry_v2.json` contains **12,380 keyless endpoints** in 13 categories:
 
-`time` 1,297 · `calendar` 1,096 · `finance` 529 · `knowledge` 421 · `weather` 283 · `misc` 115 · `news` 63 · `world` 47 · `ai` 20 · `geo` 12 · `transport` 10 · `quantum` 8 · `net` 8.
+`finance` 6,060 · `calendar` 2,803 · `knowledge` 1,508 · `time` 1,297 · `weather` 425 · `misc` 115 · `news` 63 · `world` 46 · `ai` 20 · `geo` 17 · `transport` 10 · `quantum` 8 · `net` 8.
 
 Core live sources used by the answer engine: Open-Meteo, wttr.in, open.er-api, currency-api (jsDelivr), Frankfurter, Yahoo Finance, CoinGecko, Binance, Coinbase, Kraken, timeapi.io, Google Holiday Calendar, Nager.Date, Wikipedia, DuckDuckGo, OpenAlex, Open Library, Google/Bing/BBC/Al Jazeera RSS, USGS, EMSC, wheretheiss.at, Open Notify, SpaceX, NASA APOD, NOAA SWPC.
 
@@ -146,6 +146,43 @@ python engine/providers/generate_registry_v2.py
 ```
 
 ---
+
+## 🚀 Relativistic Time Calculations
+
+ChronoVault 2.2.0 includes scientifically-grounded relativistic time calculations based on Einstein's Special Relativity theory. When making long-term forecasts, the system can account for time dilation effects at different velocities:
+
+```python
+from chronovault.forecast import relativistic_time_effects
+
+# Calculate how time passes differently for travelers
+result = relativistic_time_effects(10, 90)  # 10 years at 90% light speed
+# Returns: {
+#   "earth_years": 10,
+#   "traveler_years": 2.3,
+#   "dilation_factor": 4.36,
+#   "velocity_percent_c": 90,
+#   "note": "At 90% light speed, 10 Earth years = 2.3 traveler years"
+# }
+```
+
+This feature helps understand how different observers experience time differently, which is crucial for accurate long-term predictions across different reference frames.
+
+## 🧠 Understanding System
+
+ChronoVault 2.2.0 includes an intelligent understanding system that clarifies what users are actually asking about:
+
+- **Time Travel vs Predictions**: Distinguishes between actual time travel (impossible) and statistical predictions
+- **Physics Concepts**: Explains relativistic time effects and their scientific basis
+- **User Intent**: Identifies when users need clarification about how ChronoVault works
+- **Educational Responses**: Provides explanations about the difference between science fiction and reality
+
+```python
+from chronovault.understanding import understand_user_query
+
+# Understand what the user is actually asking
+result = understand_user_query("Can you travel to the future and get Bitcoin prices?")
+# Returns classification, explanation, and clarifying questions if needed
+```
 
 ## 🗂️ Project Structure
 
@@ -164,6 +201,7 @@ engine/chronovault/          v2 engine
   registry.py                endpoint catalog loader
   serve.py                   local HTTP server + JSON API
   cockpit.html               Time Cockpit UI
+  understanding.py           intelligent query understanding system
   tests/                     offline unit tests
 engine/providers/            registry generator
 registry_v2.json             generated endpoint catalog

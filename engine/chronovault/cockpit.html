@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>ChronoVault 2.0 · Time Cockpit</title>
+<title>ChronoVault 2.2 · Time Cockpit</title>
 <style>
 :root{
   --bg:#05070d; --bg2:#080c15; --panel:rgba(13,19,32,.78); --panel2:rgba(18,26,43,.72);
@@ -378,6 +378,77 @@ label.lbl{display:block;font-family:var(--mono);font-size:9.5px;letter-spacing:.
   .ask-actions{padding:8px 10px 11px}
   .hero h2{font-size:22px}
 }
+/* ------------------------------------------------------------- chat agent */
+.chat-panel{display:flex;flex-direction:column;margin-bottom:12px}
+.chat-log{
+  display:flex;flex-direction:column;gap:12px;padding:18px 16px;
+  min-height:330px;max-height:56vh;overflow-y:auto;scroll-behavior:smooth;
+}
+.chat-msg{
+  max-width:min(780px,94%);border:1px solid var(--line);border-radius:13px;
+  padding:11px 14px;background:rgba(13,19,32,.7);font-size:13.5px;line-height:1.55;
+}
+.chat-msg.user{
+  align-self:flex-end;border-color:rgba(94,231,255,.34);
+  background:linear-gradient(180deg,rgba(94,231,255,.10),rgba(94,231,255,.045));
+}
+.chat-msg.agent{align-self:flex-start}
+.chat-msg.agent.answer{border-color:var(--line2)}
+.chat-msg .who{
+  font-family:var(--mono);font-size:9px;letter-spacing:.16em;color:var(--faint);
+  text-transform:uppercase;margin-bottom:6px;
+}
+.chat-msg.user .who{color:rgba(94,231,255,.72);text-align:right}
+.chat-msg p{margin:0 0 7px;white-space:pre-wrap;word-break:break-word}
+.chat-msg p:last-child{margin-bottom:0}
+.chat-meta{
+  display:flex;flex-wrap:wrap;gap:6px;align-items:center;margin-top:10px;
+  padding-top:9px;border-top:1px solid var(--line);
+}
+.chat-meta .faint{font-family:var(--mono);font-size:10px}
+.chat-quick{display:flex;flex-wrap:wrap;gap:6px;margin-top:10px}
+.chat-quick .chip{font-size:11px;padding:5px 10px}
+/* council status strip */
+.council-bar{
+  display:flex;flex-wrap:wrap;align-items:center;gap:7px 10px;
+  padding:10px 14px;border-bottom:1px solid var(--line);
+  background:rgba(94,231,255,.025);font-family:var(--mono);font-size:10px;
+}
+.council-bar .council-title{
+  letter-spacing:.16em;color:var(--cyan);text-transform:uppercase;
+}
+.council-bar .pill{font-size:9.5px}
+.council-bar select{
+  appearance:none;border:1px solid var(--line2);border-radius:7px;
+  background:rgba(5,9,16,.7);color:var(--text);font-family:var(--mono);
+  font-size:10px;padding:4px 7px;cursor:pointer;
+}
+.council-bar .spacer{flex:1}
+.council-note{color:var(--faint);font-size:9.5px;line-height:1.4}
+.chat-meta .council-pill{
+  border:1px solid rgba(94,231,255,.28);border-radius:20px;
+  padding:2px 8px;color:rgba(94,231,255,.86);font-family:var(--mono);
+  font-size:9.5px;
+}
+.chat-form{display:flex;gap:9px;padding:12px 14px;border-top:1px solid var(--line)}
+.chat-form .input{flex:1;min-width:0}
+.chat-form .btn{white-space:nowrap}
+.chat-empty{
+  margin:auto;text-align:center;color:var(--dim);max-width:460px;padding:26px 10px;
+}
+.chat-empty .big{font-size:30px;color:var(--cyan);margin-bottom:8px}
+.chat-typing{display:inline-flex;gap:4px;align-items:center;color:var(--cyan);font-family:var(--mono);font-size:11px}
+.chat-typing i{
+  width:5px;height:5px;border-radius:50%;background:var(--cyan);display:inline-block;
+  animation:cvpulse 1s infinite ease-in-out;
+}
+.chat-typing i:nth-child(2){animation-delay:.15s}
+.chat-typing i:nth-child(3){animation-delay:.3s}
+@keyframes cvpulse{0%,80%,100%{opacity:.25;transform:translateY(0)}40%{opacity:1;transform:translateY(-2px)}}
+@media(max-width:760px){
+  .chat-log{max-height:none;min-height:260px}
+  .chat-msg{max-width:100%}
+}
 </style>
 </head>
 <body>
@@ -385,17 +456,18 @@ label.lbl{display:block;font-family:var(--mono);font-size:9.5px;letter-spacing:.
   <aside class="rail">
     <div class="brand">
       <div class="logo"><span>◈</span></div>
-      <div><h1>CHRONOVAULT</h1><p>v2.0 · TIME COCKPIT</p></div>
+      <div><h1>CHRONOVAULT</h1><p>v2.2 · TIME COCKPIT</p></div>
     </div>
     <div class="nav-label">NAVIGATION</div>
     <nav class="nav" id="nav">
       <button class="nav-btn active" data-tab="ask"><span class="num">01</span>Ask the Future</button>
-      <button class="nav-btn" data-tab="timeline"><span class="num">02</span>Timeline</button>
-      <button class="nav-btn" data-tab="multiverse"><span class="num">03</span>Multiverse</button>
-      <button class="nav-btn" data-tab="oracle"><span class="num">04</span>Oracle</button>
-      <button class="nav-btn" data-tab="network"><span class="num">05</span>Network</button>
-      <button class="nav-btn" data-tab="capsules"><span class="num">06</span>Capsules</button>
-      <button class="nav-btn" data-tab="registry"><span class="num">07</span>Registry</button>
+      <button class="nav-btn" data-tab="agent"><span class="num">02</span>Future Agent</button>
+      <button class="nav-btn" data-tab="timeline"><span class="num">03</span>Timeline</button>
+      <button class="nav-btn" data-tab="multiverse"><span class="num">04</span>Multiverse</button>
+      <button class="nav-btn" data-tab="oracle"><span class="num">05</span>Oracle</button>
+      <button class="nav-btn" data-tab="network"><span class="num">06</span>Network</button>
+      <button class="nav-btn" data-tab="capsules"><span class="num">07</span>Capsules</button>
+      <button class="nav-btn" data-tab="registry"><span class="num">08</span>Registry</button>
     </nav>
     <div class="rail-foot">
       <div class="pill ok"><span class="dot-live"></span><span id="railLive">LOCAL · READY</span></div>
@@ -452,6 +524,47 @@ label.lbl{display:block;font-family:var(--mono);font-size:9.5px;letter-spacing:.
           <div class="stage-log" id="stageLog"></div>
         </div>
         <div id="answerArea"></div>
+      </section>
+
+      <!-- ------------------------------------------------------------- agent -->
+      <section class="tab" id="tab-agent">
+        <div class="section-head">
+          <div>
+            <h2>Future Agent</h2>
+            <p>Ye agent pehle missing details poochta hai — phir live/forecast data se jawab deta hai. Har AI jawab keyless specialist agents ki council se cross-check hota hai. Session local SQLite me save hota hai, is liye aap baad me wahi baat continue kar sakte hain.</p>
+          </div>
+          <button class="btn ghost" id="agentNew" type="button">New session</button>
+        </div>
+        <div class="panel chat-panel">
+          <div class="council-bar" id="councilBar">
+            <span class="council-title">AI Council</span>
+            <span class="pill" id="councilRoles"><span class="dot-live"></span> checking…</span>
+            <span class="pill" id="councilRoutes">0 routes</span>
+            <span class="spacer"></span>
+            <label class="council-note" for="chatDepth">agents</label>
+            <select id="chatDepth" title="Council size: 9 = fast, 25 = deep, 50 = full">
+              <option value="9" selected>9 · fast</option>
+              <option value="15">15 · balanced</option>
+              <option value="25">25 · deep</option>
+              <option value="50">50 · full</option>
+            </select>
+            <button class="btn ghost" id="councilRefresh" type="button" title="Re-probe live providers">↻</button>
+          </div>
+          <div class="council-note" id="councilNote" style="padding:0 14px 8px">Keyless routes auto-detect hote hain: OVHcloud anonymous, LLM7, Pollinations, aur local Ollama/LM Studio. Koi API key zaroori nahi.</div>
+          <div class="chat-log" id="chatLog"></div>
+          <form class="chat-form" id="chatForm">
+            <input class="input" id="chatInput" placeholder="Misal: mere bache ka naam kya hoga?" autocomplete="off">
+            <button class="btn primary" id="chatSend" type="submit">Send ⟶</button>
+          </form>
+        </div>
+        <div class="chips" id="chatChips">
+          <button class="chip" type="button">mere bache ka naam kya hoga?</button>
+          <button class="chip" type="button">Lahore ka mausam</button>
+          <button class="chip" type="button">USD to PKR</button>
+          <button class="chip" type="button">kitne baje hain?</button>
+          <button class="chip" type="button">100000 @18% 5 saal compound</button>
+          <button class="chip" type="button">/deep Pakistan ka future kya hoga?</button>
+        </div>
       </section>
 
       <!-- -------------------------------------------------------- timeline -->
@@ -532,7 +645,7 @@ label.lbl{display:block;font-family:var(--mono);font-size:9.5px;letter-spacing:.
       <!-- --------------------------------------------------------- registry -->
       <section class="tab" id="tab-registry">
         <div class="section-head">
-          <div><h2>Endpoint Registry</h2><p>3,900+ keyless public endpoints. Search by id, category, tag, docs ya URL. Reliability sirf source ka historical weight hai — guarantee nahi.</p></div>
+          <div><h2>Endpoint Registry</h2><p>10,000+ keyless public endpoints. Search by id, category, tag, docs ya URL. Reliability sirf source ka historical weight hai — guarantee nahi.</p></div>
           <span class="pill" id="regTotal">— endpoints</span>
         </div>
         <div class="panel">
@@ -564,11 +677,13 @@ const $$ = (s, r = document) => Array.from(r.querySelectorAll(s));
 const state = {
   tab: "ask", status: null, lastAnswer: null, forecasts: [],
   registryOffset: 0, registryLimit: 30, registryTotal: 0, regLoaded: false,
+  chatSession: null, chatBusy: false, chatDepth: 9,
+  council: null, councilLoaded: false,
 };
 const TITLES = {
-  ask: "ASK THE FUTURE", timeline: "TIMELINE", multiverse: "MULTIVERSE",
-  oracle: "ORACLE · PARADOX LEDGER", network: "NETWORK",
-  capsules: "TIME CAPSULES", registry: "ENDPOINT REGISTRY",
+  ask: "ASK THE FUTURE", agent: "FUTURE AGENT", timeline: "TIMELINE",
+  multiverse: "MULTIVERSE", oracle: "ORACLE · PARADOX LEDGER",
+  network: "NETWORK", capsules: "TIME CAPSULES", registry: "ENDPOINT REGISTRY",
 };
 
 function el(tag, cls, text) {
@@ -677,6 +792,7 @@ function switchTab(tab, push = true) {
   $("#crumb").textContent = TITLES[tab];
   if (push) { try { window.history.replaceState(null, "", "#" + tab); } catch (e) {} }
   $("#main").scrollTop = 0;
+  if (tab === "agent") loadAgent();
   if (tab === "timeline") loadTimeline();
   if (tab === "multiverse") loadMultiverse();
   if (tab === "oracle") loadOracle();
@@ -826,6 +942,203 @@ async function ask(q, ai) {
     clearTimeout(watchdog);
     btn.disabled = false;
   }
+}
+
+/* ------------------------------------------------------------- chat agent */
+function chatScroll() {
+  const log = $("#chatLog");
+  log.scrollTop = log.scrollHeight;
+}
+function chatEmpty() {
+  const log = $("#chatLog");
+  clear(log);
+  const box = el("div", "chat-empty");
+  box.appendChild(el("div", "big", "◈"));
+  box.appendChild(el("p", null, "Sawal poochein — agar koi detail missing hogi to agent khud pooch lega. Misal: “mere bache ka naam kya hoga?”"));
+  log.appendChild(box);
+}
+function chatBubble(role, text, meta) {
+  meta = meta || {};
+  const log = $("#chatLog");
+  const empty = $(".chat-empty", log);
+  if (empty) empty.remove();
+  const msg = el("div", "chat-msg " + role + (meta.kind === "answer" ? " answer" : ""));
+  msg.appendChild(el("div", "who", role === "user" ? "YOU" : "FUTURE AGENT"));
+  String(text || "").split("\n").forEach(part => {
+    if (part.trim()) msg.appendChild(el("p", null, part));
+  });
+  const ansKind = meta.answer && meta.answer.kind;
+  const confVisible = meta.confidence != null && meta.confidence < 0.999 &&
+    ansKind !== "identity" && ansKind !== "help" && ansKind !== "smalltalk";
+  if (meta.badge || confVisible || (meta.sources && meta.sources.length) ||
+      (meta.council && meta.council.agents_replied != null)) {
+    const m = el("div", "chat-meta");
+    if (meta.badge) m.appendChild(badges(meta.badge));
+    if (confVisible) m.appendChild(el("span", "faint", Math.round(meta.confidence * 100) + "% confidence"));
+    if (meta.council && meta.council.agents_replied != null) {
+      const c = meta.council;
+      m.appendChild(el("span", "council-pill",
+        `council check ${c.agents_replied}/${c.agents_requested || "?"} · ` +
+        `${(c.models_replied || []).length} models · ` +
+        `agree ${Number(c.agreement || 0).toFixed(2)}`));
+    }
+    (meta.sources || []).forEach(s => m.appendChild(el("span", "source-pill", s)));
+    msg.appendChild(m);
+  }
+  if (meta.answer && meta.answer.data && meta.answer.data.forecast) {
+    msg.appendChild(forecastBlock(meta.answer.data.forecast, meta.answer));
+  }
+  if (meta.quick_replies && meta.quick_replies.length) {
+    const q = el("div", "chat-quick");
+    meta.quick_replies.forEach(text2 => {
+      const b = el("button", "chip", text2);
+      b.type = "button";
+      b.onclick = () => agentSend(text2);
+      q.appendChild(b);
+    });
+    msg.appendChild(q);
+  }
+  log.appendChild(msg);
+  chatScroll();
+  return msg;
+}
+function chatTyping() {
+  const log = $("#chatLog");
+  const msg = el("div", "chat-msg agent");
+  msg.appendChild(el("div", "who", "FUTURE AGENT"));
+  const t = el("span", "chat-typing");
+  t.appendChild(el("i")); t.appendChild(el("i")); t.appendChild(el("i"));
+  t.appendChild(document.createTextNode(" travelling…"));
+  msg.appendChild(t);
+  log.appendChild(msg);
+  chatScroll();
+  return msg;
+}
+function renderCouncil(data) {
+  const rolesEl = $("#councilRoles");
+  const routesEl = $("#councilRoutes");
+  const noteEl = $("#councilNote");
+  if (!rolesEl || !routesEl || !noteEl) return;
+  const roles = Number(data.roles || (data.catalog || []).length || 0);
+  const active = Number(data.routes_active || (data.active || []).length || 0);
+  const total = Number(data.routes_total || active || 0);
+  clear(rolesEl);
+  rolesEl.appendChild(el("span", "dot-live"));
+  rolesEl.appendChild(document.createTextNode(` ${roles} roles`));
+  routesEl.textContent = `${active}/${total} live routes`;
+  const providers = Array.from(new Set((data.active || []).map(r => r.provider))).filter(Boolean);
+  if (providers.length) {
+    noteEl.textContent = "Live: " + providers.join(" · ") +
+      " — keyless. Deterministic facts always outrank AI synthesis; forecasts stay speculative.";
+  } else {
+    noteEl.textContent = "Koi keyless chat route live nahi mila abhi. Verified/deterministic jawab phir bhi kaam karega — koi API key zaroori nahi.";
+  }
+}
+async function loadCouncil(force) {
+  const rolesEl = $("#councilRoles");
+  if (!rolesEl) return;
+  if (state.councilLoaded && !force && state.council) {
+    renderCouncil(state.council);
+    return;
+  }
+  clear(rolesEl);
+  rolesEl.appendChild(el("span", "dot-live"));
+  rolesEl.appendChild(document.createTextNode(" checking…"));
+  const noteEl = $("#councilNote");
+  if (noteEl) noteEl.textContent = "Live keyless providers probe ho rahe hain (OVHcloud, LLM7, Pollinations, local servers)…";
+  try {
+    const data = await api("/api/swarm" + (force ? "?force=1" : ""), {}, 30000);
+    state.council = data;
+    state.councilLoaded = true;
+    renderCouncil(data);
+  } catch (e) {
+    clear(rolesEl);
+    rolesEl.appendChild(el("span", "badge b-red", "probe failed"));
+    const routesEl = $("#councilRoutes");
+    if (routesEl) routesEl.textContent = "0 routes";
+    if (noteEl) {
+      noteEl.textContent = "Council probe fail: " + e.message +
+        " — deterministic answers still work without AI.";
+    }
+  }
+}
+async function agentSend(text) {
+  text = (text || "").trim();
+  if (!text || state.chatBusy) return;
+  state.chatBusy = true;
+  const btn = $("#chatSend");
+  btn.disabled = true;
+  const depthSel = $("#chatDepth");
+  const depth = Number((depthSel && depthSel.value) || state.chatDepth || 9);
+  state.chatDepth = depth;
+  chatBubble("user", text);
+  const typing = chatTyping();
+  const timeout = depth >= 50 ? 420000 : depth >= 25 ? 300000 : 180000;
+  try {
+    const data = await postJSON("/api/chat", {
+      session_id: state.chatSession, message: text, ai: true, depth: depth,
+    }, timeout);
+    typing.remove();
+    if (data.session_id) {
+      state.chatSession = data.session_id;
+      try { localStorage.setItem("cv_chat_session", data.session_id); } catch (e) {}
+    }
+    const meta = {
+      kind: data.state === "answered" ? "answer" : "clarify",
+      badge: data.answer ? data.answer.badge : null,
+      confidence: data.answer ? data.answer.confidence : null,
+      sources: data.answer ? data.answer.sources : null,
+      council: data.answer ? data.answer.council : null,
+      answer: data.answer,
+      quick_replies: data.quick_replies || [],
+      pending: data.pending || "",
+    };
+    chatBubble("agent", data.reply || "(no reply)", meta);
+  } catch (e) {
+    typing.remove();
+    chatBubble("agent", "Error: " + friendlyNetError(e.message));
+    toast("Agent reply nahi mila: " + e.message, true);
+  } finally {
+    state.chatBusy = false;
+    btn.disabled = false;
+    $("#chatInput").focus();
+  }
+}
+async function loadAgent() {
+  loadCouncil();
+  const log = $("#chatLog");
+  if (!state.chatSession) {
+    try { state.chatSession = localStorage.getItem("cv_chat_session"); } catch (e) {}
+  }
+  if (!state.chatSession) { chatEmpty(); return; }
+  clear(log);
+  const loading = el("div", "chat-empty");
+  loading.appendChild(el("p", null, "Session load ho raha hai…"));
+  log.appendChild(loading);
+  try {
+    const data = await api("/api/chat/session?id=" + encodeURIComponent(state.chatSession));
+    clear(log);
+    const msgs = (data.session && data.session.messages) || [];
+    if (!msgs.length) { chatEmpty(); return; }
+    msgs.forEach(m => {
+      const meta = m.meta || {};
+      chatBubble(m.role === "user" ? "user" : "agent", m.text, {
+        kind: meta.kind, badge: meta.badge, confidence: meta.confidence,
+        sources: meta.sources, council: meta.council,
+        quick_replies: meta.quick_replies || [],
+      });
+    });
+  } catch (e) {
+    state.chatSession = null;
+    try { localStorage.removeItem("cv_chat_session"); } catch (e2) {}
+    chatEmpty();
+  }
+}
+function agentNewSession() {
+  state.chatSession = null;
+  try { localStorage.removeItem("cv_chat_session"); } catch (e) {}
+  chatEmpty();
+  $("#chatInput").focus();
 }
 
 /* ------------------------------------------------------------- answer view */
@@ -1383,6 +1696,35 @@ function bindEvents() {
     $("#q").value = b.textContent;
     ask(b.textContent, $("#aiToggle").checked);
   });
+  $("#chatForm").addEventListener("submit", e => {
+    e.preventDefault();
+    const input = $("#chatInput");
+    const text = input.value;
+    input.value = "";
+    agentSend(text);
+  });
+  $("#chatInput").addEventListener("keydown", e => {
+    if (e.key === "Enter" && !e.shiftKey) {
+      e.preventDefault();
+      $("#chatForm").requestSubmit();
+    }
+  });
+  $$("#chatChips .chip").forEach(b => b.onclick = () => agentSend(b.textContent));
+  $("#agentNew").onclick = agentNewSession;
+  const depthSel = $("#chatDepth");
+  if (depthSel) {
+    depthSel.addEventListener("change", () => {
+      state.chatDepth = Number(depthSel.value) || 9;
+      toast(`Council depth: ${state.chatDepth} specialist agents`);
+    });
+  }
+  const councilRefresh = $("#councilRefresh");
+  if (councilRefresh) {
+    councilRefresh.onclick = () => {
+      state.councilLoaded = false;
+      loadCouncil(true);
+    };
+  }
   $("#tlRefresh").onclick = loadTimeline;
   $("#mvRefresh").onclick = loadMultiverse;
   $("#oraRefresh").onclick = loadOracle;

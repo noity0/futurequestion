@@ -1,4 +1,4 @@
-"""ChronoVault 2.0 — shared paths and constants."""
+"""ChronoVault 2.2.0 — shared paths and constants."""
 from __future__ import annotations
 
 import os
@@ -16,8 +16,8 @@ ORACLE_DIR = os.path.join(ENGINE_DIR, "oracle")
 LEDGER_PATH = os.path.join(ORACLE_DIR, "paradox_ledger.db")
 
 APP_NAME = "ChronoVault"
-VERSION = "2.0.1"
-UA = ("Mozilla/5.0 (compatible; ChronoVault/2.0.1; local personal time machine; "
+VERSION = "2.2.0"
+UA = ("Mozilla/5.0 (compatible; ChronoVault/2.2; local personal time machine; "
       "offline-first; no telemetry; contact: local-user)")
 
 

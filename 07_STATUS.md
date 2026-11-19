@@ -197,8 +197,37 @@ Date: 2026-11-18 · Patch release
   `LICENSE`, `CONTRIBUTING.md`, `CHANGELOG.md`, `RELEASE_CHECKLIST.md`.
 
 ### Tests
-- `python chrono.py selftest` → **22/22 PASS**
+- `python chrono.py selftest` → **40/40 PASS**
 - `python chrono.py selftest --online` → **7/7 live sources PASS**
 - `python comprehensive_test.py` → **22/22 end-to-end QA PASS**
 - Cockpit UI browser-verified: 7 tabs, streaming answer, no console errors.
 - `2+2` via UI → `EXACT-MATH`, answer "2+2 = 4", 579 ms.
+
+## 🏁 MILESTONE: CHRONOVAULT 2.2.0 — "70-role AI council, honest provenance, 12,380 endpoints"
+
+Date: 2026-11-19 · Major release
+
+### Major improvements
+- **Expanded registry**: 12,380 endpoints across 13 categories (finance 6,060, calendar 2,803, knowledge 1,508, time 1,297, weather 425, misc 115, news 63, world 46, ai 20, geo 17, transport 10, quantum 8, net 8)
+- **70-role specialist AI council**: 50+ agent cross-checks with honest confidence scoring and never raising confidence above deterministic evidence
+- **Relativistic time calculations**: Based on Einstein's Special Relativity theory for scientifically-grounded long-term predictions
+- **Fixed stale-context bug**: Chat agent now properly escapes stale FX/crypto context with new topics
+- **Honest provenance display**: CLI chat now shows badges, confidence, sources, and council info
+- **Enhanced news filtering**: Explicit match/no-match handling instead of showing unrelated headlines
+- **Improved forecast confidence**: Caps at 10 years with honest disclosure and proper decay calculations
+
+### Technical fixes
+- **forecast_query()**: Strips horizon noise from generic forecast queries
+- **Evidence gating**: Generic forecasts now properly check `ok` flag before displaying results
+- **Council badge clarity**: Updated from "+ COUNCIL n/m" to "+ COUNCIL CHECK n/m"
+- **Horizon cap preservation**: Requested days properly stored in metadata even when capped
+- **Confidence decay**: Different forecast types now have appropriate confidence decay rates
+- **Chat slot parsing**: Asset queries now use `forecast_query()` to avoid stale context
+
+### Tests
+- `python chrono.py selftest` → **40/40 PASS**
+- `python comprehensive_test.py` → **22/22 end-to-end QA PASS**
+- Relativistic time calculations tested and verified
+- Council cross-check functionality tested with depth 9 and depth 50 scenarios
+- News relevance filtering tested with match/no-match cases
+- Chat agent tested with military power sequence to confirm stale context fix

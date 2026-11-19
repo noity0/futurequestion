@@ -1,4 +1,4 @@
-"""ChronoVault 2.0 — local Time Cockpit server (stdlib only).
+"""ChronoVault 2.2 — local Time Cockpit server (stdlib only).
 
 Binds to 127.0.0.1, serves the embedded cockpit UI, and exposes a small JSON
 API. No external assets, no telemetry, no auth — it is a personal local tool.
@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import json
 import os
+import sys
 import threading
 import time
 import webbrowser
@@ -14,8 +15,9 @@ from datetime import date, datetime, timedelta
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import parse_qs, urlparse
 
-from . import net, probes, ui
-from .ask import Chrono
+from . import chat as chatmod
+from . import net, probes, swarm, ui
+from .ask import DEFAULT_DEPTH, Chrono, clamp_depth
 from .memory import Memory
 from .oracle import Oracle
 from .paths import (CACHE_DIR, DB_PATH, LEDGER_PATH, REGISTRY_PATH, ROOT,
@@ -24,6 +26,8 @@ from .registry import Registry
 
 _REG = None
 _REG_LOCK = threading.Lock()
+_CHAT = None
+_CHAT_LOCK = threading.Lock()
 MAX_BODY = 1_000_000
 
 
@@ -33,6 +37,14 @@ def registry() -> Registry:
         if _REG is None:
             _REG = Registry()
         return _REG
+
+
+def chat_agent() -> chatmod.ChatAgent:
+    global _CHAT
+    with _CHAT_LOCK:
+        if _CHAT is None:
+            _CHAT = chatmod.ChatAgent()
+        return _CHAT
 
 
 def _now() -> str:
@@ -79,12 +91,19 @@ def status_payload() -> dict:
         },
         "cache": {"bytes": _cache_bytes(), "db": DB_PATH},
         "ledger": LEDGER_PATH,
+        "council": {
+            "roles": len(swarm.ROLES),
+            "core_roles": len(swarm.CORE_IDS),
+            "routes_known": len(swarm.all_routes()),
+            "default_depth": DEFAULT_DEPTH,
+            "max_depth": 50,
+        },
         "tasks": probes.task_status(),
     }
 
 
 class Handler(BaseHTTPRequestHandler):
-    server_version = "ChronoVault/2.0"
+    server_version = "ChronoVault/2.2"
     protocol_version = "HTTP/1.1"
 
     # ------------------------------------------------------------- utilities
@@ -94,16 +113,20 @@ class Handler(BaseHTTPRequestHandler):
 
     def _send(self, body: bytes, ctype: str = "application/json; charset=utf-8",
               status: int = 200, extra: dict | None = None):
-        self.send_response(status)
-        self.send_header("Content-Type", ctype)
-        self.send_header("Content-Length", str(len(body)))
-        self.send_header("Cache-Control", "no-store")
-        for k, v in (extra or {}).items():
-            self.send_header(k, v)
-        self.end_headers()
+        # A browser tab can close or abort at any point (Windows WinError
+        # 10053/10054). That is normal client behaviour, not a server error;
+        # never try to answer a dead socket or print a traceback for it.
         try:
+            self.send_response(status)
+            self.send_header("Content-Type", ctype)
+            self.send_header("Content-Length", str(len(body)))
+            self.send_header("Cache-Control", "no-store")
+            for k, v in (extra or {}).items():
+                self.send_header(k, v)
+            self.end_headers()
             self.wfile.write(body)
-        except (BrokenPipeError, ConnectionResetError):
+        except (BrokenPipeError, ConnectionResetError, ConnectionAbortedError,
+                OSError):
             pass
 
     def _json(self, obj, status: int = 200):
@@ -153,6 +176,10 @@ class Handler(BaseHTTPRequestHandler):
                 return
             if path == "/api/status":
                 self._json(status_payload())
+                return
+            if path in ("/api/swarm", "/api/council"):
+                st = swarm.probe(force=q.get("force") == "1")
+                self._json({"ok": True, "catalog": swarm.roles(), **st})
                 return
             if path == "/api/history":
                 limit = max(1, min(200, int(q.get("limit", 30))))
@@ -211,6 +238,18 @@ class Handler(BaseHTTPRequestHandler):
             if path == "/api/tasks":
                 self._json({"items": probes.task_status()})
                 return
+            if path == "/api/chat/sessions":
+                limit = max(1, min(50, int(q.get("limit", 20))))
+                self._json({"items": Memory().chat_list(limit)})
+                return
+            if path == "/api/chat/session":
+                sid = (q.get("id") or "").strip()
+                sess = chat_agent().session(sid) if sid else None
+                if not sess:
+                    self._error("session not found", 404)
+                    return
+                self._json({"ok": True, "session": sess})
+                return
             self._error("not found", 404)
         except (ValueError, TypeError) as e:
             self._error(str(e), 400)
@@ -230,6 +269,33 @@ class Handler(BaseHTTPRequestHandler):
         try:
             if path == "/api/ask":
                 self._ask(body, stream=q.get("stream") == "1")
+                return
+            if path in ("/api/swarm", "/api/council"):
+                question = str(body.get("question") or body.get("q") or "").strip()
+                if not question:
+                    self._error("question required", 400)
+                    return
+                if len(question) > 2000:
+                    self._error("question too long (max 2000 chars)", 400)
+                    return
+                depth = clamp_depth(body.get("depth") or DEFAULT_DEPTH)
+                kind = str(body.get("kind") or "knowledge").strip().lower()
+                context = str(body.get("context") or "").strip()[:4000]
+                result = swarm.synthesize(question, kind, context, [],
+                                          depth=depth)
+                self._json({"ok": bool(result.get("ok")), "result": result})
+                return
+            if path == "/api/chat":
+                message = str(body.get("message") or "").strip()
+                if len(message) > 4000:
+                    self._error("message too long (max 4000 chars)", 400)
+                    return
+                sid = str(body.get("session_id") or "").strip() or None
+                use_ai = bool(body.get("ai", True))
+                depth = clamp_depth(body.get("depth") or DEFAULT_DEPTH)
+                reply = chat_agent().handle(message, session_id=sid,
+                                            ai=use_ai, depth=depth)
+                self._json({"ok": True, **reply.to_dict()})
                 return
             if path == "/api/feedback":
                 aid = int(body.get("id") or 0)
@@ -287,17 +353,23 @@ class Handler(BaseHTTPRequestHandler):
             self._error("question too long (max 2000 chars)", 400)
             return
         use_ai = bool(body.get("ai", True))
+        depth = clamp_depth(body.get("depth") or DEFAULT_DEPTH)
 
         if not stream:
-            ans = Chrono(use_llm=use_ai).ask(question, ai=use_ai)
+            ans = Chrono(use_llm=use_ai, depth=depth).ask(
+                question, ai=use_ai, depth=depth)
             self._json({"ok": True, "answer": ans.to_dict()})
             return
 
-        self.send_response(200)
-        self.send_header("Content-Type", "application/x-ndjson; charset=utf-8")
-        self.send_header("Cache-Control", "no-store")
-        self.send_header("Transfer-Encoding", "chunked")
-        self.end_headers()
+        try:
+            self.send_response(200)
+            self.send_header("Content-Type", "application/x-ndjson; charset=utf-8")
+            self.send_header("Cache-Control", "no-store")
+            self.send_header("Transfer-Encoding", "chunked")
+            self.end_headers()
+        except (BrokenPipeError, ConnectionResetError, ConnectionAbortedError,
+                OSError):
+            return
         closed = {"v": False}
 
         def emit(obj: dict) -> None:
@@ -319,8 +391,8 @@ class Handler(BaseHTTPRequestHandler):
         try:
             emit({"type": "start", "question": question, "ai": use_ai,
                   "at": time.time()})
-            ans = Chrono(use_llm=use_ai).ask(question, ai=use_ai,
-                                             on_stage=on_stage)
+            ans = Chrono(use_llm=use_ai, depth=depth).ask(
+                question, ai=use_ai, on_stage=on_stage, depth=depth)
             emit({"type": "answer", "answer": ans.to_dict()})
         except Exception as e:
             emit({"type": "error", "error": f"{type(e).__name__}: {e}"})
@@ -340,6 +412,15 @@ class CockpitServer(ThreadingHTTPServer):
         self.verbose = verbose
         super().__init__(addr, handler)
 
+    def handle_error(self, request, client_address):
+        # Windows browsers abort connections routinely (tab closed, refresh,
+        # fetch cancelled). WinError 10053/10054 is not a server bug.
+        exc = sys.exc_info()[1]
+        if isinstance(exc, (BrokenPipeError, ConnectionResetError,
+                            ConnectionAbortedError, OSError)):
+            return
+        super().handle_error(request, client_address)
+
 
 def run(port: int = 8765, open_browser: bool = True, verbose: bool = False,
         host: str = "127.0.0.1") -> int:
@@ -358,7 +439,7 @@ def run(port: int = 8765, open_browser: bool = True, verbose: bool = False,
         return 1
     url = f"http://{host}:{actual}/"
     print()
-    print("  CHRONOVAULT 2.0 · TIME COCKPIT")
+    print("  CHRONOVAULT 2.2.0 · TIME COCKPIT")
     print(f"  {url}")
     print("  Ctrl+C se band karein.")
     print()

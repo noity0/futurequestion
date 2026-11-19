@@ -31,6 +31,15 @@ def _con():
     con.execute("""CREATE TABLE IF NOT EXISTS events(
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         ts TEXT, kind TEXT, payload TEXT)""")
+    con.execute("""CREATE TABLE IF NOT EXISTS chat_sessions(
+        id TEXT PRIMARY KEY, created TEXT, updated TEXT, state TEXT,
+        intent TEXT, slots TEXT, pending TEXT, last_question TEXT,
+        history TEXT)""")
+    con.execute("""CREATE TABLE IF NOT EXISTS chat_messages(
+        id INTEGER PRIMARY KEY AUTOINCREMENT, session_id TEXT, ts TEXT,
+        role TEXT, text TEXT, meta TEXT)""")
+    con.execute("""CREATE INDEX IF NOT EXISTS idx_chat_messages_session
+        ON chat_messages(session_id, id)""")
     # migrate a v2 database created before the extra columns existed
     have = {r[1] for r in con.execute("PRAGMA table_info(answers)")}
     for col in ("data", "intent", "sources"):
@@ -144,6 +153,136 @@ class Memory:
                 con.execute(
                     "INSERT INTO events(ts,kind,payload) VALUES(?,?,?)",
                     (_now(), kind, _j(payload)))
+                con.commit()
+            finally:
+                con.close()
+
+    # ------------------------------------------------------------- chat
+    def chat_create(self, sid: str | None = None) -> dict:
+        import uuid
+        sid = sid or ("cv_" + uuid.uuid4().hex[:12])
+        now = _now()
+        with _LOCK:
+            con = _con()
+            try:
+                row = con.execute("SELECT id FROM chat_sessions WHERE id=?",
+                                  (sid,)).fetchone()
+                if not row:
+                    con.execute(
+                        "INSERT INTO chat_sessions(id,created,updated,state,"
+                        "intent,slots,pending,last_question,history) "
+                        "VALUES(?,?,?,?,?,?,?,?,?)",
+                        (sid, now, now, "new", "", "{}", "", "", "[]"))
+                    con.commit()
+            finally:
+                con.close()
+        return self.chat_get(sid) or {"id": sid, "state": "new", "slots": {},
+                                       "intent": "", "pending": "",
+                                       "last_question": ""}
+
+    def chat_get(self, sid: str) -> dict | None:
+        if not sid:
+            return None
+        with _LOCK:
+            con = _con()
+            try:
+                row = con.execute(
+                    "SELECT id,created,updated,state,intent,slots,pending,"
+                    "last_question FROM chat_sessions WHERE id=?", (sid,)
+                ).fetchone()
+            finally:
+                con.close()
+        if not row:
+            return None
+        keys = ["id", "created", "updated", "state", "intent", "slots",
+                "pending", "last_question"]
+        d = dict(zip(keys, row))
+        try:
+            d["slots"] = json.loads(d.get("slots") or "{}")
+        except Exception:
+            d["slots"] = {}
+        return d
+
+    def chat_save(self, sid: str, **fields) -> None:
+        allowed = {"state", "intent", "slots", "pending", "last_question"}
+        sets, vals = [], []
+        for key, value in fields.items():
+            if key not in allowed:
+                continue
+            if key == "slots":
+                value = _j(value)
+            sets.append(f"{key}=?")
+            vals.append(value)
+        if not sets:
+            return
+        sets.append("updated=?")
+        vals.append(_now())
+        vals.append(sid)
+        with _LOCK:
+            con = _con()
+            try:
+                con.execute(f"UPDATE chat_sessions SET {', '.join(sets)} "
+                            "WHERE id=?", tuple(vals))
+                con.commit()
+            finally:
+                con.close()
+
+    def chat_add_message(self, sid: str, role: str, text: str,
+                         meta: dict | None = None) -> int:
+        with _LOCK:
+            con = _con()
+            try:
+                cur = con.execute(
+                    "INSERT INTO chat_messages(session_id,ts,role,text,meta) "
+                    "VALUES(?,?,?,?,?)",
+                    (sid, _now(), role, text, _j(meta)))
+                con.commit()
+                return cur.lastrowid
+            finally:
+                con.close()
+
+    def chat_messages(self, sid: str, limit: int = 100) -> list[dict]:
+        with _LOCK:
+            con = _con()
+            try:
+                rows = con.execute(
+                    "SELECT id,ts,role,text,meta FROM chat_messages "
+                    "WHERE session_id=? ORDER BY id ASC LIMIT ?",
+                    (sid, limit)).fetchall()
+            finally:
+                con.close()
+        out = []
+        for r in rows:
+            item = {"id": r[0], "ts": r[1], "role": r[2], "text": r[3]}
+            meta = _loads(r[4])
+            if meta:
+                item["meta"] = meta
+            out.append(item)
+        return out
+
+    def chat_list(self, limit: int = 20) -> list[dict]:
+        with _LOCK:
+            con = _con()
+            try:
+                rows = con.execute(
+                    "SELECT id,created,updated,state,intent,pending "
+                    "FROM chat_sessions ORDER BY updated DESC LIMIT ?",
+                    (limit,)).fetchall()
+            finally:
+                con.close()
+        keys = ["id", "created", "updated", "state", "intent", "pending"]
+        return [dict(zip(keys, r)) for r in rows]
+
+    def chat_reset(self, sid: str) -> None:
+        with _LOCK:
+            con = _con()
+            try:
+                con.execute("DELETE FROM chat_messages WHERE session_id=?",
+                            (sid,))
+                con.execute(
+                    "UPDATE chat_sessions SET state='new',intent='',slots='{}',"
+                    "pending='',last_question='',updated=? WHERE id=?",
+                    (_now(), sid))
                 con.commit()
             finally:
                 con.close()
