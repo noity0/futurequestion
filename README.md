@@ -276,7 +276,7 @@ See [CONTRIBUTING.md](CONTRIBUTING.md). Bug reports and new keyless sources are 
 
 ## 📄 License
 
-[MIT](LICENSE) © 2026 ChronoVault Contributors
+[MIT](LICENSE) © 2026 Hafiz Muhammad Huzaifa Shamim
 
 ## ⚠️ Disclaimer
 

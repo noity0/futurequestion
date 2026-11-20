@@ -2,7 +2,7 @@
 name: ChronoVault
 description: Keyless time machine - past archives + live present data + statistical future forecasts with honest confidence badges. No API keys. Local-first. For time travel questions, future predictions, forecasts, and AI council cross-checks.
 version: 2.2.0
-author: noity0
+author: Hafiz Muhammad Huzaifa Shamim
 license: MIT
 category: knowledge-lookup
 tags: [time machine, future, predictions, forecasts, AI council, keyless, data]
